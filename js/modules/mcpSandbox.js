@@ -1,14 +1,26 @@
 /**
- * McpSandboxModule - Interactive laboratory for testing the Model Context Protocol.
- * Teaches hosts-server JSON-RPC standards with live protocol packet inspections.
+ * McpSandboxModule - Model Context Protocol Playground & Code Generator.
+ * Provides (1) Visual JSON-RPC handshake simulators, and (2) Custom NodeJS MCP Server SDK scaffold compilers.
  */
 export class McpSandboxModule {
   constructor(appState) {
     this.appState = appState;
     this.container = null;
+    this.activeTab = 'sandbox'; // 'sandbox' or 'generator'
     this.activeServer = 'sqlite';
     this.handshakeRunning = false;
     this.timer = null;
+
+    // Local custom generator state
+    this.customServerName = "custom-mcp-server";
+    this.customTransport = "stdio";
+    this.customTools = [
+      { 
+        name: "query_service", 
+        description: "Executes a secure fetch query against the downstream external API microservice.",
+        params: "url, query" 
+      }
+    ];
 
     this.serverDefinitions = {
       sqlite: {
@@ -141,27 +153,55 @@ export class McpSandboxModule {
   mount(containerId) {
     this.container = document.getElementById(containerId);
     this.render();
-    this.loadServer(this.activeServer);
   }
 
   render() {
     if (!this.container) return;
 
     this.container.innerHTML = `
-      <div class="mcp-grid-layout">
+      <div class="mcp-tab-container">
+        <button class="mcp-tab-btn ${this.activeTab === 'sandbox' ? 'active' : ''}" id="mcp-tab-sandbox">🎛️ Handshake Sandbox</button>
+        <button class="mcp-tab-btn ${this.activeTab === 'generator' ? 'active' : ''}" id="mcp-tab-generator">⚡ Scaffold Custom Server</button>
+      </div>
+
+      <div id="mcp-tab-content">
+        <!-- Render Active Tab View -->
+      </div>
+    `;
+
+    document.getElementById('mcp-tab-sandbox').addEventListener('click', () => {
+      this.activeTab = 'sandbox';
+      this.render();
+    });
+    document.getElementById('mcp-tab-generator').addEventListener('click', () => {
+      this.activeTab = 'generator';
+      this.render();
+    });
+
+    if (this.activeTab === 'sandbox') {
+      this.renderSandbox();
+    } else {
+      this.renderGenerator();
+    }
+  }
+
+  renderSandbox() {
+    const tabContent = document.getElementById('mcp-tab-content');
+    tabContent.innerHTML = `
+      <div class="mcp-grid-layout animate-fade-in">
         <!-- Sidebar controls -->
         <div class="glass-card mcp-sidebar">
-          <h2>MCP Handshake Sandbox</h2>
+          <h2>Handshake Sandbox</h2>
           <p class="section-description">Model Context Protocol maps external integrations to standard JSON-RPC 2.0 schemas. Choose a server and test protocol packets.</p>
 
           <div class="server-picker">
             <label>Select Mock MCP Server</label>
             <div class="mcp-server-cards">
-              <div class="mcp-card active" data-server="sqlite" id="mcp-card-sqlite">
+              <div class="mcp-card ${this.activeServer === 'sqlite' ? 'active' : ''}" data-server="sqlite" id="mcp-card-sqlite">
                 <h4>🗄️ SQLite DB Server</h4>
                 <p>Standard relational database toolset</p>
               </div>
-              <div class="mcp-card" data-server="filesystem" id="mcp-card-filesystem">
+              <div class="mcp-card ${this.activeServer === 'filesystem' ? 'active' : ''}" data-server="filesystem" id="mcp-card-filesystem">
                 <h4>📁 File System Server</h4>
                 <p>Local disk reading and discovery</p>
               </div>
@@ -175,7 +215,7 @@ export class McpSandboxModule {
             </div>
           </div>
 
-          <button class="btn btn-accent btn-full" id="run-handshake-btn">Trigger Protocol handshake</button>
+          <button class="btn btn-accent btn-full" id="run-handshake-btn">Trigger Protocol Handshake</button>
         </div>
 
         <!-- Handshake monitor panel -->
@@ -207,7 +247,7 @@ export class McpSandboxModule {
     `;
 
     // Cards hooks
-    const cards = this.container.querySelectorAll('.mcp-card');
+    const cards = tabContent.querySelectorAll('.mcp-card');
     cards.forEach(card => {
       card.addEventListener('click', () => {
         if (this.handshakeRunning) return;
@@ -222,12 +262,11 @@ export class McpSandboxModule {
       if (this.handshakeRunning) return;
       this.runHandshake();
     });
+
+    this.loadServer(this.activeServer);
   }
 
   loadServer(serverKey) {
-    if (this.timer) clearTimeout(this.timer);
-    this.handshakeRunning = false;
-
     const server = this.serverDefinitions[serverKey];
     document.getElementById('server-label').textContent = server.name;
     document.getElementById('server-avatar').textContent = serverKey === 'sqlite' ? '🗄️' : '📁';
@@ -261,21 +300,18 @@ export class McpSandboxModule {
 
     const executeStep = () => {
       if (!this.handshakeRunning || stepIndex >= steps.length) {
-        // Complete
         statusEl.textContent = "CONNECTED";
         statusEl.className = "status-glow completed";
         arrow.className = "flow-arrow right";
-        arrow.style.animation = "none";
         this.handshakeRunning = false;
-
-        // Complete Lab in Dashboard
+        
+        // Sync Lab Completion
         this.appState.dashboard.completeLab(`mcp_${this.activeServer}`);
         return;
       }
 
       const step = steps[stepIndex];
       
-      // Determine arrow direction and visual pulse
       if (step.direction === 'host_to_server') {
         arrow.className = "flow-arrow right active-arrow";
         document.getElementById('ep-client').classList.add('pulse-active');
@@ -286,7 +322,6 @@ export class McpSandboxModule {
         setTimeout(() => document.getElementById('ep-server').classList.remove('pulse-active'), 500);
       }
 
-      // Format payload text
       let payload = {};
       if (step.direction === 'host_to_server') {
         payload = {
@@ -318,5 +353,253 @@ export class McpSandboxModule {
     };
 
     executeStep();
+  }
+
+  // Visual Scaffold Generator Tab View
+  renderGenerator() {
+    const tabContent = document.getElementById('mcp-tab-content');
+    tabContent.innerHTML = `
+      <div class="mcp-generator-panel animate-fade-in">
+        <!-- Form configurations (Left) -->
+        <div class="glass-card">
+          <h2>Custom MCP Server Builder</h2>
+          <p class="section-description">Visually scaffold a fully compliant Node.js Model Context Protocol Server containing your custom tools, inputs, and descriptions.</p>
+
+          <div class="form-group">
+            <label for="server-name-input">Server Name</label>
+            <input type="text" id="server-name-input" class="form-input" value="${this.customServerName}" placeholder="e.g. postgres-mcp-server">
+          </div>
+
+          <div class="form-group">
+            <label for="transport-select">Transport Protocol</label>
+            <select id="transport-select" class="form-select">
+              <option value="stdio" ${this.customTransport === 'stdio' ? 'selected' : ''}>STDIO (Local Processes)</option>
+              <option value="sse" ${this.customTransport === 'sse' ? 'selected' : ''}>SSE (Remote Server Websockets)</option>
+            </select>
+          </div>
+
+          <div class="dynamic-tools-section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <h3>Exposed Tools Definition</h3>
+              <button class="btn btn-sm" id="add-tool-row-btn">+ Add Tool</button>
+            </div>
+            
+            <div id="dynamic-tools-container">
+              <!-- Render Tools rows -->
+            </div>
+          </div>
+
+          <button class="btn btn-accent btn-full" style="margin-top: 12px;" id="compile-mcp-btn">⚡ Generate Production Server Code</button>
+        </div>
+
+        <!-- Compiled Code Display (Right) -->
+        <div class="glass-card" style="display: flex; flex-direction: column;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h3>Compiled JavaScript (Node.js SDK)</h3>
+            <button class="btn btn-sm btn-success" id="copy-mcp-code-btn">Copy Code</button>
+          </div>
+          <div class="protocol-terminal" style="flex-grow: 1;">
+            <pre class="json-code" id="generator-code-block" style="color: #6ee7b7;"></pre>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Dynamic Row hook triggers
+    document.getElementById('add-tool-row-btn').addEventListener('click', () => {
+      this.customTools.push({ name: "new_tool", description: "Performs action details.", params: "param1, param2" });
+      this.renderToolsRows();
+    });
+
+    document.getElementById('server-name-input').addEventListener('input', (e) => {
+      this.customServerName = e.target.value;
+    });
+
+    document.getElementById('transport-select').addEventListener('change', (e) => {
+      this.customTransport = e.target.value;
+    });
+
+    document.getElementById('compile-mcp-btn').addEventListener('click', () => {
+      this.compileMcpServerCode();
+    });
+
+    document.getElementById('copy-mcp-code-btn').addEventListener('click', () => {
+      const code = document.getElementById('generator-code-block').textContent;
+      navigator.clipboard.writeText(code);
+      alert("Node.js MCP SDK code copied to clipboard successfully!");
+    });
+
+    this.renderToolsRows();
+    this.compileMcpServerCode(); // Pre-compile initial
+  }
+
+  renderToolsRows() {
+    const container = document.getElementById('dynamic-tools-container');
+    if (!container) return;
+
+    container.innerHTML = '';
+    
+    this.customTools.forEach((tool, idx) => {
+      const row = document.createElement('div');
+      row.className = 'dynamic-tool-entry animate-slide-up';
+      row.innerHTML = `
+        <button class="remove-tool-btn" data-idx="${idx}">✕</button>
+        <div style="display: grid; grid-template-columns: 1fr 1.5fr; gap: 10px; margin-bottom: 8px;">
+          <div>
+            <label style="font-size: 10px; color: var(--text-secondary);">Tool Name</label>
+            <input type="text" class="form-input tool-name" data-idx="${idx}" value="${tool.name}">
+          </div>
+          <div>
+            <label style="font-size: 10px; color: var(--text-secondary);">Parameters (comma separated)</label>
+            <input type="text" class="form-input tool-params" data-idx="${idx}" value="${tool.params}">
+          </div>
+        </div>
+        <div>
+          <label style="font-size: 10px; color: var(--text-secondary);">Tool Description</label>
+          <input type="text" class="form-input tool-desc" data-idx="${idx}" value="${tool.description}">
+        </div>
+      `;
+      container.appendChild(row);
+    });
+
+    // Inputs value change triggers
+    container.querySelectorAll('.tool-name').forEach(inp => {
+      inp.addEventListener('input', (e) => {
+        const idx = parseInt(inp.getAttribute('data-idx'));
+        this.customTools[idx].name = e.target.value;
+      });
+    });
+
+    container.querySelectorAll('.tool-params').forEach(inp => {
+      inp.addEventListener('input', (e) => {
+        const idx = parseInt(inp.getAttribute('data-idx'));
+        this.customTools[idx].params = e.target.value;
+      });
+    });
+
+    container.querySelectorAll('.tool-desc').forEach(inp => {
+      inp.addEventListener('input', (e) => {
+        const idx = parseInt(inp.getAttribute('data-idx'));
+        this.customTools[idx].description = e.target.value;
+      });
+    });
+
+    container.querySelectorAll('.remove-tool-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.getAttribute('data-idx'));
+        this.customTools.splice(idx, 1);
+        this.renderToolsRows();
+      });
+    });
+  }
+
+  // Node.js MCP SDK Server Compiler Engine
+  compileMcpServerCode() {
+    const display = document.getElementById('generator-code-block');
+    if (!display) return;
+
+    // Construct tools schema definitions
+    const toolsDefinitions = this.customTools.map(t => {
+      const properties = {};
+      const required = [];
+      
+      t.params.split(',').forEach(p => {
+        const cleanName = p.trim();
+        if (cleanName) {
+          properties[cleanName] = { 
+            type: "string", 
+            description: `Parameter argument for ${cleanName}` 
+          };
+          required.push(cleanName);
+        }
+      });
+
+      return `      {
+        name: "${t.name}",
+        description: "${t.description}",
+        inputSchema: {
+          type: "object",
+          properties: ${JSON.stringify(properties, null, 12).replace(/\n/g, '\n      ')},
+          required: ${JSON.stringify(required)}
+        }
+      }`;
+    }).join(',\n');
+
+    // Construct call handlers
+    const callHandlers = this.customTools.map(t => {
+      const argMappings = t.params.split(',').map(p => p.trim()).filter(p => p).map(p => `const ${p} = args.${p};`).join('\n      ');
+      return `    case "${t.name}": {
+      ${argMappings || "// No parameters"}
+      // TODO: Implement custom tool logic execution
+      return {
+        content: [{
+          type: "text",
+          text: \`Successfully executed ${t.name} with arguments: \${JSON.stringify(args)}\`
+        }]
+      };
+    }`;
+    }).join('\n\n');
+
+    const transportImport = this.customTransport === 'stdio'
+      ? `import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";`
+      : `import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";`;
+
+    const transportListen = this.customTransport === 'stdio'
+      ? `const transport = new StdioServerTransport();\nawait server.connect(transport);\nconsole.error("MCP Server successfully listening via STDIO transport channel!");`
+      : `import express from "express";\nconst app = express();\nlet transport;\n\napp.get("/sse", (req, res) => {\n  transport = new SSEServerTransport("/messages", res);\n  server.connect(transport);\n});\n\napp.post("/messages", (req, res) => {\n  transport.handleMessage(req, res);\n});\n\napp.listen(3001, () => {\n  console.log("MCP SSE Server listening on port 3001");\n});`;
+
+    const serverCode = `/**
+ * NodeJS Model Context Protocol Server Compliant Scaffold
+ * Compiled dynamically by the Claude Architect Scaffold Engine
+ */
+
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+${transportImport}
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
+
+// Initialize server capabilities
+const server = new Server(
+  {
+    name: "${this.customServerName}",
+    version: "1.0.0",
+  },
+  {
+    capabilities: {
+      tools: {},
+    },
+  }
+);
+
+// 1. Tool discovery schema resolver
+server.setRequestHandler(ListToolsRequestSchema, async () => {
+  return {
+    tools: [
+${toolsDefinitions}
+    ]
+  };
+});
+
+// 2. Tool handler trigger resolver
+server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  const { name, arguments: args } = request.params;
+
+  switch (name) {
+${callHandlers}
+    default:
+      throw new Error(\`Tool '\${name}' not supported by this server.\`);
+  }
+});
+
+// 3. Bind transport mechanism
+${transportListen}
+`;
+
+    display.textContent = serverCode;
+    
+    // Increment lab stats
+    this.appState.dashboard.completeLab("mcp_custom_compiler");
   }
 }
